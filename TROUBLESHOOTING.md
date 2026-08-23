@@ -126,3 +126,122 @@ under the 12-character PSO) and an uncovered user (`mgarcia`, under the 7-charac
 domain default). Both were rejected, with `samba-tool`'s error message explicitly
 stating the *different* minimum length in each case — confirming the PSO was
 scoped correctly rather than accidentally applying domain-wide.
+
+---
+
+## 4. GCP cost estimator showing a non-zero price for free-tier resources
+
+**Symptom:** an `e2-micro` VM correctly configured for the Always Free tier
+(eligible region, correct machine type, Standard persistent disk under 30GB)
+still showed a **non-zero "Monthly estimate"** ($6–11 depending on region/disk
+choices at the time) on GCP's VM creation page.
+
+**Diagnosis:** GCP's built-in cost estimator on the instance-creation page
+calculates **raw list pricing** — it has no visibility into whether a given
+account/project actually qualifies for Always Free tier credit (which depends
+on account-wide usage: only one `e2-micro` instance per billing account, in an
+eligible region, under 744 hours/month). The estimator is not free-tier-aware;
+this is a widely-reported, known point of confusion, not a misconfiguration.
+
+**Resolution:** verified against GCP's current published Always Free terms
+(region list, instance-type limit, disk allotment) rather than trusting the
+estimate widget, and proceeded — actual billing correctly applied the free
+credit, unrelated to what the estimator displayed.
+
+**Lesson:** a tool's default UI feedback isn't always authoritative — cross-check
+against the source of truth (official docs) when a number doesn't match
+expectations, rather than assuming the configuration is wrong.
+
+## 5. GCP console silently resetting form selections mid-configuration
+
+**Symptom:** machine type (`e2-micro`) and boot OS (Ubuntu 24.04) were each
+selected correctly at one point during VM creation, but reverted to GCP's
+defaults (`e2-medium`/similar, Debian) after navigating between other sections
+of the same creation form (e.g., changing region, then coming back).
+
+**Diagnosis:** confirmed only by checking `/etc/os-release` *after* the VM was
+already created and running — output showed Debian ("trixie"), not the Ubuntu
+24.04 that had been selected earlier in the same session.
+
+**Fix:** deleted and recreated the VM, this time setting OS/storage and machine
+type as late as possible in the form, and re-verifying each setting immediately
+before clicking Create rather than trusting the sidebar summary text.
+
+**Lesson:** don't trust a multi-step form's summary/breadcrumb display as proof
+a setting is still applied — verify the actual running resource after creation
+(`/etc/os-release`, `wg show`, etc.) rather than the configuration UI.
+
+## 6. Minimal cloud VM image missing basic CLI tools
+
+**Symptom:** `nano: command not found` and `ping: command not found` on the
+freshly created GCP VM, despite both being available by default on the
+homelab's Ubuntu Server 24.04 install.
+
+**Diagnosis:** GCP's Ubuntu cloud image is a minimal base image, optimized for
+small size and fast boot — it omits several packages that a full Ubuntu Server
+ISO install includes by default.
+
+**Fix:** installed as needed (`sudo apt install nano -y`,
+`sudo apt install iputils-ping -y`).
+
+**Lesson:** "same OS version" doesn't guarantee "same installed packages" —
+cloud provider base images and self-installed ISOs diverge in what ships by
+default. Worth checking a new image's installed package set early rather than
+assuming parity with a previously built system.
+
+## 7. WireGuard handshake silently failing due to system clock drift
+
+**Symptom:** `wg-quick@wg0` started with no errors on both machines, and both
+sides showed the interface as "up" with a correctly configured peer — but
+`wg show` on the initiating side (`lab-server`) showed `0 B received` and no
+`latest handshake` line, meaning packets were being sent but no response was
+coming back.
+
+**Diagnosis:** `date` on `lab-server` showed the system clock had drifted
+significantly (this VM had already had one clock-drift incident earlier in the
+project, from `apt`'s repository-validity check — see the original DNS/apt
+troubleshooting history). WireGuard's handshake protocol includes timestamps as
+part of its anti-replay protection (based on Noise Protocol Framework); a
+sufficiently incorrect system clock can cause the responding peer to silently
+reject the handshake without any explicit error message on either side.
+
+**Fix:**
+```bash
+sudo timedatectl set-ntp off
+sudo timedatectl set-ntp on
+```
+This forced a fresh NTP resync. Immediately after, `wg show` showed a
+successful, recent handshake with real bidirectional transfer on both sides.
+
+**Lesson:** cryptographic protocols with timestamp-based replay protection
+(WireGuard, Kerberos, TLS with strict clock checks, etc.) can fail in ways that
+look identical to a networking or config problem — no explicit "clock is wrong"
+error is guaranteed. When a supposedly-correct config silently fails to
+complete a handshake, checking system time on both ends is a fast, cheap step
+worth doing early rather than after exhausting config/firewall theories. This
+VM in particular has now hit clock drift twice in this project — likely tied
+to how UTM/QEMU handles guest clock sync across suspend/resume or extended
+idle periods, worth a permanent NTP hardening step in a future revision (e.g.
+`systemd-timesyncd` polling interval tuning).
+
+## 8. Private key exposure via chat/log paste (secure-handling process note)
+
+**Symptom:** not a technical fault — a WireGuard private key was pasted into
+a chat window while asking for help formatting the config file.
+
+**Resolution:** treated the key as compromised on principle (a secret that has
+left its intended boundary should be rotated, regardless of who saw it or how
+low the practical risk seems) — regenerated a fresh keypair for that machine
+and rebuilt the config with the new key, rather than continuing to use the
+exposed one.
+
+**Process change:** for all subsequent key handling, viewed private keys only
+directly in the terminal that generated them (`sudo cat ... privatekey`) and
+copied them using the terminal's own clipboard integration into the config
+file editor, without the key value passing through any external channel
+(chat, notes app, etc.) at any point.
+
+**Lesson:** the fix for an exposed secret is rotation, not just "being more
+careful next time" — treating exposure as a rotation trigger, consistently, is
+a better habit than trying to judge case-by-case how exposed is "exposed
+enough" to matter.

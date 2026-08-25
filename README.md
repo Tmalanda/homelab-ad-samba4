@@ -108,8 +108,3 @@ site-to-site VPN tunnel, with confirmed DNS resolution, Kerberos
 authentication, and a full Active Directory domain join — a genuine hybrid
 cloud/on-prem identity setup. Full details, architecture, and configuration
 reference in [`CLOUD_INFRASTRUCTURE.md`](./CLOUD_INFRASTRUCTURE.md).
-
-## Possible future additions (optional)
-
-- [ ] Configuration management via Ansible (companion to the Bash script)
-- [ ] CI validation for the provisioning script (e.g. `shellcheck` on push)

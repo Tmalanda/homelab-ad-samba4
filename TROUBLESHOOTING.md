@@ -241,7 +241,35 @@ copied them using the terminal's own clipboard integration into the config
 file editor, without the key value passing through any external channel
 (chat, notes app, etc.) at any point.
 
-**Lesson:** the fix for an exposed secret is rotation, not just "being more
-careful next time" — treating exposure as a rotation trigger, consistently, is
-a better habit than trying to judge case-by-case how exposed is "exposed
-enough" to matter.
+## 9. Domain join failing with "Ticket expired" — same root cause, different subsystem
+
+**Symptom:** `sudo realm join -U administrator HOMELAB.LOCAL` failed with a
+generic `Insufficient permissions to join the domain` error, despite using
+correct credentials.
+
+**Diagnosis:** the underlying log (`journalctl REALMD_OPERATION=...`) showed
+the real error one layer down: `adcli` successfully authenticated as
+`administrator@HOMELAB.LOCAL`, then immediately failed the LDAP SASL bind with
+`GSSAPI Error: ... (Ticket expired)`. This is the same class of problem as
+issue #7 (WireGuard handshake failing from clock drift) — the GCP VM's system
+clock had drifted again, and a Kerberos ticket that's valid for several hours
+appeared instantly expired to the receiving side because the two clocks
+disagreed by more than Kerberos's default skew tolerance.
+
+**Fix:** same as before —
+```bash
+sudo timedatectl set-ntp off
+sudo timedatectl set-ntp on
+```
+Rejoin succeeded immediately after.
+
+**Lesson (reinforcing #7):** this is the second time, on two different
+machines, that clock drift has caused a failure that presented as a
+permissions/auth problem rather than an obviously time-related one. Any
+environment doing Kerberos or WireGuard across machines that aren't
+continuously running (cloud VMs that sleep/resume, local VMs that get
+suspended) should treat NTP health as a first-class thing to verify — not an
+afterthought — before debugging credentials, keys, or firewall rules. A
+reasonable permanent fix worth considering: a cron job or systemd timer that
+periodically forces an NTP resync check, rather than relying on it happening
+automatically on boot.

@@ -101,15 +101,15 @@ HOMELAB.LOCAL
   limitation of the tool itself (visible in shell history / `ps`) and is called out
   explicitly rather than hidden.
 
-## Cloud infrastructure phase
+## Cloud infrastructure phase — complete
 
-A GCP-hosted Linux VM is now connected to this environment via a WireGuard
-site-to-site VPN tunnel, with confirmed LAN-level reachability from the cloud
-VM to the AD DC. Full details, architecture, and configuration reference in
-[`CLOUD_INFRASTRUCTURE.md`](./CLOUD_INFRASTRUCTURE.md).
+A GCP-hosted Ubuntu VM is connected to this environment via a WireGuard
+site-to-site VPN tunnel, with confirmed DNS resolution, Kerberos
+authentication, and a full Active Directory domain join — a genuine hybrid
+cloud/on-prem identity setup. Full details, architecture, and configuration
+reference in [`CLOUD_INFRASTRUCTURE.md`](./CLOUD_INFRASTRUCTURE.md).
 
-## Next phases (in progress)
+## Possible future additions (optional)
 
-- [ ] DNS/Kerberos verification and domain-join for the GCP VM
 - [ ] Configuration management via Ansible (companion to the Bash script)
-- [ ] CI validation for the provisioning script
+- [ ] CI validation for the provisioning script (e.g. `shellcheck` on push)

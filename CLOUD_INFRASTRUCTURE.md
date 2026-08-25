@@ -65,6 +65,53 @@ The GCP VM, with no direct route to a private home LAN, successfully reaches
 the AD DC's actual LAN IP — not just the tunnel endpoint — confirming the
 tunnel is correctly routing, not just connected point-to-point.
 
+## DNS, Kerberos, and domain join (complete)
+
+With the tunnel proven, the GCP VM was configured to resolve `HOMELAB.LOCAL`
+through it, authenticate via Kerberos, and finally join the domain outright.
+
+**DNS scoped to the tunnel interface**, via `wg-quick` hooks in
+`/etc/wireguard/wg0.conf` on the GCP side:
+```ini
+PostUp = resolvectl dns %i 192.168.64.2; resolvectl domain %i ~homelab.local
+PreDown = resolvectl dns %i ""; resolvectl domain %i ""
+```
+This scopes DNS routing to only the `wg0` interface, leaving the VM's normal
+internet-facing DNS untouched — the same routing-domain approach used
+originally on `lab-server`, just applied per-interface via WireGuard's own
+lifecycle hooks instead of netplan.
+
+**Kerberos ticket obtained successfully:**
+```
+$ kinit administrator@HOMELAB.LOCAL
+$ klist
+Default principal: administrator@HOMELAB.LOCAL
+Service principal: krbtgt/HOMELAB.LOCAL@HOMELAB.LOCAL
+```
+
+**Domain join completed** via `realmd`/`adcli`:
+```bash
+sudo realm join -U administrator HOMELAB.LOCAL
+```
+
+**Confirmed from both sides:**
+```
+# On lab-server (the DC):
+$ sudo samba-tool computer list
+GCP-CLIENT-LAB$
+LAB-SERVER$
+
+# On the GCP VM:
+$ id administrator@homelab.local
+uid=1240400500(administrator@homelab.local) gid=1240400513(domain users@homelab.local)
+groups=...,domain admins@homelab.local,enterprise admins@homelab.local,...
+```
+
+The GCP VM is now a genuine domain member: DNS, Kerberos, and `sssd`-backed
+identity resolution all work live, over the internet, through the WireGuard
+tunnel — a cloud resource fully integrated into an on-prem Active Directory
+environment.
+
 ## Config reference (keys redacted)
 
 **GCP VM (`/etc/wireguard/wg0.conf`) — server role:**
@@ -98,11 +145,14 @@ subnet (`192.168.64.0/24`) since it needs to route to the DC; the home side's
 else through this link yet. `PersistentKeepalive` is only needed on the NAT'd
 side, to keep the router's NAT mapping alive for return traffic.
 
-## Next steps
+## Status: complete
 
-- [ ] Confirm DNS resolution from the GCP VM against `HOMELAB.LOCAL`
-- [ ] Confirm Kerberos authentication from the GCP VM
-- [ ] Domain-join the GCP VM to `HOMELAB.LOCAL`
+- [x] DNS resolution from the GCP VM against `HOMELAB.LOCAL`
+- [x] Kerberos authentication from the GCP VM
+- [x] Domain-join the GCP VM to `HOMELAB.LOCAL`
+
+## Possible future hardening (not required for this project's scope)
+
 - [ ] Restrict the GCP firewall rule's source range once a stable use case is
       defined (currently `0.0.0.0/0`, relying on WireGuard's own key-based
       auth rather than IP allowlisting)
